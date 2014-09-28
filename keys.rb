@@ -8,14 +8,15 @@ end
 
 def get_user_keys
   my_user_key=""
-  my user_secret=""
+  my_user_secret=""
 
   return my_user_key, my_user_secret
 end
 
 
+#### needs fix: keys should live in the user's homedir
 begin
-  require './keys.local.rb' 
+  require_relative 'keys.local.rb' 
 rescue LoadError => ex
 
   puts %{
