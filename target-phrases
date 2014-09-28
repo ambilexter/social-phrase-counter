@@ -1,7 +1,7 @@
 #!/usr/bin/ruby 
 
-require "./analyze-tweets.rb"
-require "./config.rb"
+require "social-phrase-counter/analyze-tweets.rb"
+require "social-phrase-counter/config.rb"
 
 analyst=PhraseAnalyst::Analyst.new(term, config, flags)
 analyst.run

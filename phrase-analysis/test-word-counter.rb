@@ -1,6 +1,6 @@
 require 'rubygems'
 require 'minitest/autorun'
-require 'phrase-analysis/word-counter.rb'
+require 'social-phrase-counter/phrase-analysis/word-counter.rb'
 
 class TestCounter < MiniTest::Test
 
