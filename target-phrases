@@ -1,0 +1,8 @@
+#!/usr/bin/ruby 
+
+require "./analyze-tweets.rb"
+require "./config.rb"
+
+analyst=PhraseAnalyst::Analyst.new(term, config, flags)
+analyst.run
+
