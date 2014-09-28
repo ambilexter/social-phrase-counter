@@ -1,6 +1,6 @@
-require 'phrase-analysis/analyst-data.rb'
-require 'phrase-analysis/word-counter.rb'
-require 'phrase-analysis/search-twitter.rb'
+require 'social-phrase-counter/phrase-analysis/analyst-data.rb'
+require 'social-phrase-counter/phrase-analysis/word-counter.rb'
+require 'social-phrase-counter/phrase-analysis/search-twitter.rb'
 
 module PhraseAnalyst
   class Analyst
@@ -145,13 +145,13 @@ module PhraseAnalyst
     def save_tempfiles raw_data, curated_data
 
       File.open("raw-source-tweets","w") do |tf|
-        raw_data.each do  |line| 
+        raw_data.split(/\n/).each do  |line| 
           tf.puts line
         end
       end
 
       File.open("uniq-source-tweets","w") do |tf|
-        curated_data.each do  |line| 
+        curated_data.split(/\n/).each do  |line| 
           tf.puts line
         end
       end
