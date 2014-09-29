@@ -3,6 +3,15 @@ module PhraseAnalyst
 
     def initialize source, method, search_config
 
+      case method
+      when :realtime
+        alias :get_results :get_results_realtime
+        @client_type = "Streaming"
+      else
+        alias :get_results :get_results_historical
+        @client_type = "REST"
+      end
+
       case source
       when :json
         fail "NYI"
@@ -10,41 +19,37 @@ module PhraseAnalyst
         @twitter_client = create_authed_client
       end # source chosen
 
-      case method
-      when :realtime
-        alias :get_results :get_results_realtime
-      else
-        alias :get_results :get_results_historical
-      end
-
       @search_arguments = search_config
 
       @my_flags = {}
       @my_flags[:total] = 1500 or search_config[:count]
-
       
       # internal state-keeping for counting
       @seen_text= Hash.new{|h,k| h[k] = []}
       # @seen_ids={0} # why doesn't this work?
       @seen_ids = Hash.new(0)
 
-
     end
+
 
     def create_authed_client
       require './keys' # personal developer access lives in a separate file
 
       begin
         $stderr.print "Authenticating..."
-        client = Twitter::REST::Client.new do |config|
-          config.consumer_key,  
-          config.consumer_secret,
-          config.bearer_token = get_my_keys
+        consumer_key, consumer_secret, bearer_token = get_my_keys
 
-          # wrap this in an error handler; 
-          # if there's no userkeys specified in keys.local.rb it'll still work
-          # user authenticaiton gets you rate-limited later, I think?
-          config.access_token, config.access_token_secret = get_user_keys
+        # wrap this in an error handler; 
+        # if there's no userkeys specified in keys.local.rb historic 
+        # will still work but streaming will not. Also, rate limits differ?
+        access_token, access_token_secret = get_user_keys
+
+        client = eval("Twitter::#{@client_type}::Client").new do |config|
+          config.consumer_key = consumer_key  
+          config.consumer_secret = consumer_secret
+          config.bearer_token = bearer_token if @client_type == :historic
+          config.access_token = access_token
+          config.access_token_secret = access_token_secret
         end
       rescue StandardError => ex
         $stderr.puts "Client creation failed, now what?"
@@ -52,14 +57,30 @@ module PhraseAnalyst
         $stderr.puts ex.message
       end
       $stderr.puts "done."
-
+      
       return client
     end
-
+    
     def get_results_realtime
-      fail "NYI"
-    end
+      @cached_results=[]
+      
+      @twitter_client.filter(:track => term) do |object|
+        case object
+        when Twitter::Streaming::StallWarning
+          warn "stream stalled?"
+          break
+        when Twitter::Tweet
+          @cached_results << object
+          warn "found " << @cached_results.length if @cached_results.length.to_s % 25 == 0
+          break if @cached_results.length > @my_flags[:total]
+        else 
+          warn "stream returned: " << object.inspect
+        end
+      end # stream
 
+      return @cached_results
+    end # get_results_realtime
+    
     def get_results_historical
       # eventually, trap errors here.
       # for example, the json-parsing bit of the faraday middleware will 

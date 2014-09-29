@@ -8,7 +8,7 @@ end
 def flags 
   return {
     :source => :twitter, # defaults to :twitter
-    :method => :historic # defaults to historic
+    :method => :historic # defaults to :historic
   }
 end
 
