@@ -7,6 +7,13 @@ module PhraseAnalyst
 
     def initialize term, search_config, flags
 
+      @at_least_this_many = 16
+      @sub_list_max = 7
+      @sub_list_min_count = 5
+
+      @total_counted_chunks = 0
+      @suppress_display = {}
+
       @source = SearchTwitter.new(flags[:source], flags[:method], search_config)
       
       @word_counter = WordCounter.new
@@ -20,9 +27,7 @@ module PhraseAnalyst
     def run
 
       $stderr.print "Results for #{term}...\n"
-
-      # entries should work. would reverse_each{|item| block} be more fun?
-      @source.get_results.entries.reverse.each do |chunk|
+        @source.get_results.entries.reverse.each do |chunk|
         log_search_results chunk
         
         case @source.categorize_this chunk
@@ -31,6 +36,8 @@ module PhraseAnalyst
         end
         
       end # each chunk
+
+      @total_counted_chunks = @supporting_data.compiled_text.length
       
       save_tempfiles @source.compile(@supporting_data.full_results,""), @source.compile(@supporting_data.compiled_text, "Counted: ")
 
@@ -63,7 +70,6 @@ module PhraseAnalyst
 
       flat_data = {}
       phrases_by_count = @word_counter.by_count
-      suppress_display = {}
 
       inner = 0
       outer = 0
@@ -73,11 +79,11 @@ module PhraseAnalyst
         phrases.each do |phrase,count|
           outer += 1
           flat_data[phrase] = count
-          next if count==1 or suppress_display[phrase] == :yes
+          next if count==1 or @suppress_display[phrase] == :yes
 
           phrases_by_count[count].each do |test_phrase|
             inner += 1
-            suppress_display[test_phrase] = :yes if (phrase[test_phrase] and phrase != test_phrase)
+            @suppress_display[test_phrase] = :yes if (phrase[test_phrase] and phrase != test_phrase)
           end # all the phrases with this count examined for de-duping          
 
         end # all the phrases
@@ -86,36 +92,54 @@ module PhraseAnalyst
 
       result= "\n\n ----------------\n\n"      
       seen = 0
+      biggest = 0
       $stderr.puts "preparing output..."
       flat_data.sort_by {|k, v| v}.reverse.each do |phrase, count|
-        break unless stop_reporting(count, seen) == :keep_going
-        next if suppress_display[phrase] == :yes
+        biggest = count if count > biggest
+        break unless stop_reporting(count, seen, biggest) == :keep_going
+        next if @suppress_display[phrase] == :yes
 
         result <<  "#{phrase}: #{count}\n"
-
-        (3...count).to_a.reverse.each do |more|
-          phrases_by_count[more].each do |test_phrase|
-            # need a custom-matching function, that only works on whole words
-            # so "me food" doesn't match "some food and"
-            if test_phrase[phrase] and not suppress_display[test_phrase]
-              result << "     #{test_phrase}: #{more}\n" 
-              suppress_display[test_phrase] = :yes
-            end
-          end
-        end
+        result << sub_phrases(phrase, count, phrases_by_count) if count > @sub_list_min_count
 
         seen += 1
-      end
+      end # each phrase (left-justified)
 
       return result
     end # pretty print
 
+    def sub_phrases phrase, count, phrases_by_count
+      sub_list_count=0
+      result = ""
 
-    def stop_reporting count_data, result_quantity
+      (@sub_list_min_count...count).to_a.reverse.each do |more|
+
+        phrases_by_count[more].each do |test_phrase|
+          # need a custom-matching function, that only works on whole words
+          # so "me food" doesn't match "some food and"
+          if test_phrase[phrase] and not @suppress_display[test_phrase]
+            result << "     #{test_phrase}: #{more}\n" 
+            @suppress_display[test_phrase] = :yes
+            sub_list_count += 1
+          end # matches, not suppressed
+
+          return result if sub_list_count > @sub_list_max
+
+        end # each phrase (indented)
+      end # each count
+
+      return result
+    end # sub_phrases
+
+
+    def stop_reporting count_data, result_quantity, biggest
+
       # the more data we have, the less interesting smaller data is.
-      return :stop if count_data == 2 unless result_quantity < 16
-      return :stop if count_data == 1
+      return :stop if count_data == 2
 
+      return :stop if result_quantity > @at_least_this_many and 
+        (count_data < biggest/20 or result_quantity > @total_counted_chunks/20)
+      
       return :keep_going
     end
 

@@ -22,7 +22,7 @@ module PhraseAnalyst
       @search_arguments = search_config
 
       @my_flags = {}
-      @my_flags[:total] = 1500 or search_config[:count]
+      @my_flags[:total] = search_config[:count] or 1500
       
       # internal state-keeping for counting
       @seen_text= Hash.new{|h,k| h[k] = []}
@@ -55,6 +55,7 @@ module PhraseAnalyst
         $stderr.puts "Client creation failed, now what?"
         $stderr.puts ex.inspect
         $stderr.puts ex.message
+	exit
       end
       $stderr.puts "done."
       
@@ -64,32 +65,59 @@ module PhraseAnalyst
     def get_results_realtime
       @cached_results=[]
       
-      @twitter_client.filter(:track => term) do |object|
-        case object
-        when Twitter::Streaming::StallWarning
-          warn "stream stalled?"
-          break
-        when Twitter::Tweet
-          @cached_results << object
-          warn "found " << @cached_results.length if @cached_results.length.to_s % 25 == 0
-          break if @cached_results.length > @my_flags[:total]
-        else 
-          warn "stream returned: " << object.inspect
-        end
-      end # stream
+      begin
+        @twitter_client.filter(:track => term) do |object|
+          case object
+          when Twitter::Streaming::StallWarning
+            warn "stream stalled?"
+            break
+          when Twitter::Tweet
+            @cached_results.unshift(object)
+            warn "found " << @cached_results.length.to_s if @cached_results.length % 25 == 0
+            break if @cached_results.length > @my_flags[:total]
+          else 
+            warn "stream returned: " << object.inspect
+          end
+        end # stream
+
+      rescue Twitter::Error::Unauthorized => ex
+        puts "Is the system clock correct?" if 
+          /Timestamp out of bounds/.match(ex.message)
+        fail ex.message
+      end
 
       return @cached_results
     end # get_results_realtime
     
     def get_results_historical
-      # eventually, trap errors here.
+      # eventually, trap more errors here.
       # for example, the json-parsing bit of the faraday middleware will 
       # throw an ArgumentError if the request fails w/empty results
-      @cached_results = 
-        @twitter_client.search(term, @search_arguments).take(@my_flags[:total])
-       return @cached_results
+      # the REST client will throw
+      # Rate limit exceeded (Twitter::Error::TooManyRequests)
+
+      begin
+        @cached_results = 
+          @twitter_client.search(term, @search_arguments).take(@my_flags[:total])
+
+        @search_arguments[:max_id] =  (@cached_results.last.id - 1).to_s
+        @cached_results += 
+          @twitter_client.search(term, @search_arguments).take(@my_flags[:total])
+
+      rescue Twitter::Error::TooManyRequests => ex
+        warn "Rate limit exceeded!"
+        @client_type = "Streaming"
+        return create_authed_client.get_results_realtime
+      end
+
+      return @cached_results
     end
 
+    def back_even_further
+      @search_arguments[:max_id] =  (@cached_results.last.id - 1).to_s
+      return @twitter_client.search(term, @search_arguments).take(@my_flags[:total])
+      warn "search further back complete"
+    end # back_even_further
 
     def categorize_this tweet
       if tweet.text =~ /^RT @/
@@ -110,7 +138,7 @@ module PhraseAnalyst
 
 
     def compile(list, tag)
-      
+      warn tag << " " << list.length.to_s
       result=""
       list.each do |tweet|
         result += tag + 
