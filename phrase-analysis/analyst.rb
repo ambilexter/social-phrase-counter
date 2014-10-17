@@ -15,27 +15,23 @@ module PhraseAnalyst
       @suppress_display = {}
 
       @source = SearchTwitter.new(flags[:source], flags[:method], search_config)
-      
       @word_counter = WordCounter.new
-
       @supporting_data = AnalystData.new()
 
-      $stderr.puts "initialization complete."
+      warn "initialization complete."
 
     end # initialize()
-
+    
     def run
 
-      $stderr.print "Results for #{term}...\n"
-        @source.get_results.entries.reverse.each do |chunk|
-        log_search_results chunk
-        
-        case @source.categorize_this chunk
-          when :count then count chunk
-          when :nocount then mark_uncounted chunk
-        end
-        
-      end # each chunk
+      warn "Results for #{term}..."
+      case flags[:threaded]
+      when :yes
+        flags[:goback] ||= 5
+        run_threaded(flags[:goback])
+      else
+        run_not_threaded
+      end
 
       @total_counted_chunks = @supporting_data.compiled_text.length
       
@@ -44,9 +40,41 @@ module PhraseAnalyst
       puts pretty_print @word_counter.phrases
 
       return @word_counter.phrases
+    end
 
-    end # run()
+    def run_threaded iterations_back
 
+      current_results = @source.back_even_further
+      next_results = current_results
+
+      iterations_back.times do 
+        request = Thread.new { next_results = @source.back_even_further }
+        data = Thread.new { iterate_over(current_results) }
+        
+        data.join
+        request.join
+
+        current_results = next_results
+      end
+    end # run_threaded
+
+    def run_not_threaded
+      results = @source.get_results
+      iterate_over(results)
+    end 
+
+    def iterate_over results
+      
+      results.entries.reverse.each do |chunk|
+        log_search_results chunk
+        
+        case @source.categorize_this chunk
+        when :count then count chunk
+        when :nocount then mark_uncounted chunk
+        end
+        
+      end # each chunk
+    end
 
     def log_search_results data
       @supporting_data.full_results << data
@@ -71,18 +99,15 @@ module PhraseAnalyst
       flat_data = {}
       phrases_by_count = @word_counter.by_count
 
-      inner = 0
-      outer = 0
-      
       $stderr.puts "Flattening and de-duping..."
       data.sort_by {|k, v| k}.reverse.each do |length, phrases|
         phrases.each do |phrase,count|
-          outer += 1
+
           flat_data[phrase] = count
           next if count==1 or @suppress_display[phrase] == :yes
 
           phrases_by_count[count].each do |test_phrase|
-            inner += 1
+
             @suppress_display[test_phrase] = :yes if (phrase[test_phrase] and phrase != test_phrase)
           end # all the phrases with this count examined for de-duping          
 

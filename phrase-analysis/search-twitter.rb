@@ -114,8 +114,8 @@ module PhraseAnalyst
     end
 
     def back_even_further
-      @search_arguments[:max_id] =  (@cached_results.last.id - 1).to_s
-      return @twitter_client.search(term, @search_arguments).take(@my_flags[:total])
+      @search_arguments[:max_id] =  (@last_results.last.id - 1).to_s unless @last_results.eql?(nil)
+      return @last_results = @twitter_client.search(term, @search_arguments).take(@my_flags[:total])
       warn "search further back complete"
     end # back_even_further
 
