@@ -21,6 +21,7 @@ module PhraseAnalyst
 
     def count_words text
       words = text.split(/\s+/) # this is still insufficiently smart
+      words.reject! { |a| %r(http://t\.co/\w{10}).match(a) }
 
       # if this is directed at somebody, don't phrasify that part
       while words[0] =~ /^@/
